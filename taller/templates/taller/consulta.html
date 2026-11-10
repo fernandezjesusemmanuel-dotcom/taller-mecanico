@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07090c">
+<title>Estado de tu vehículo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Outfit:wght@100;200;300;400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>
+tailwind.config = { theme: { extend: {
+  fontFamily: { mono: ['"JetBrains Mono"','ui-monospace','monospace'], sans: ['Outfit','system-ui','sans-serif'] },
+  colors: { ink: '#07090c', carbon: '#0d1117', plate: '#141a22', cyan: '#22e3ff', volt: '#2f7bff', amber: '#ff8a1f', ok: '#2dff9a' }
+}}}
+</script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<style>
+  :root { --cyan:#22e3ff; --amber:#ff8a1f; --ok:#2dff9a; }
+  html,body { background:#07090c; color:#dbe6f0; -webkit-tap-highlight-color:transparent; }
+  body {
+    background:
+      radial-gradient(900px 500px at 50% -10%, rgba(34,227,255,.10), transparent 60%),
+      radial-gradient(700px 500px at 100% 70%, rgba(47,123,255,.07), transparent 60%),
+      #07090c;
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Cristal esmerilado */
+  .glass {
+    background: linear-gradient(145deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
+    backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid rgba(255,255,255,.07);
+    box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 20px 40px -20px rgba(0,0,0,.8), 0 0 0 1px rgba(0,0,0,.4);
+    border-radius: 22px;
+  }
+  .label { font-family:'JetBrains Mono',monospace; font-size:.68rem; letter-spacing:.14em; color:#6f8294; text-transform:uppercase; }
+  .readout { font-family:'JetBrains Mono',monospace; font-weight:300; letter-spacing:-.02em; }
+  .thin { font-family:'Outfit',sans-serif; font-weight:200; }
+
+  /* Botón con compresión magnética */
+  .magnet { transition: transform .25s cubic-bezier(.2,.9,.3,1.2), box-shadow .25s, background .25s; will-change: transform; }
+  .magnet:active { transform: scale(.94) !important; box-shadow: 0 0 0 1px var(--cyan) inset, 0 0 30px -4px var(--cyan); }
+  .btn-main { background: linear-gradient(180deg, rgba(34,227,255,.22), rgba(34,227,255,.06)); border:1px solid rgba(34,227,255,.5); box-shadow: 0 0 24px -8px var(--cyan); }
+  .btn-main:hover { box-shadow: 0 0 34px -4px var(--cyan); }
+
+  /* Revelación progresiva */
+  .reveal { opacity:0; transform: translateY(18px); filter: blur(6px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1), filter .7s ease; transition-delay: var(--d,0ms); }
+  .reveal.on { opacity:1; transform:none; filter:none; }
+
+  /* HUD timeline */
+  .seg { position:relative; height:6px; border-radius:2px; background:rgba(255,255,255,.08); overflow:hidden; }
+  .seg > i { position:absolute; inset:0; transform-origin:left; transform:scaleX(0); transition: transform 1s cubic-bezier(.2,.8,.2,1); background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+  .seg.done > i { transform:scaleX(1); }
+  .seg.now > i { transform:scaleX(1); background: var(--amber); box-shadow: 0 0 14px var(--amber); }
+  .seg.now::after { content:""; position:absolute; top:0; bottom:0; width:40%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.9), transparent); animation: sweep 1.6s linear infinite; }
+  @keyframes sweep { from { left:-40%; } to { left:100%; } }
+  .node.now .dot { background: var(--amber); box-shadow: 0 0 0 4px rgba(255,138,31,.18), 0 0 18px var(--amber); animation: pulse 1.6s ease-in-out infinite; }
+  .node.done .dot { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+  .node.now .name { color:#fff; } .node.done .name { color:#9fdfff; }
+  @keyframes pulse { 50% { transform: scale(1.35); } }
+
+  /* Hotspots 3D */
+  .hotspot { position:absolute; left:0; top:0; width:28px; height:28px; margin:-14px 0 0 -14px; border-radius:50%; pointer-events:auto; cursor:pointer; transition: opacity .3s; --c: var(--amber); }
+  .hotspot::before { content:""; position:absolute; inset:9px; border-radius:50%; background: var(--c); box-shadow: 0 0 14px var(--c); }
+  .hotspot::after { content:""; position:absolute; inset:0; border-radius:50%; border:1px solid var(--c); animation: ring 2s ease-out infinite; }
+  .hotspot.ok { --c: var(--ok); } .hotspot.work { --c: var(--amber); }
+  @keyframes ring { from { transform:scale(.4); opacity:1; } to { transform:scale(1.5); opacity:0; } }
+  .tip { position:absolute; left:50%; bottom:130%; transform:translateX(-50%) translateY(6px); white-space:nowrap; opacity:0; pointer-events:none; transition:.25s; padding:6px 10px; border-radius:10px; font:400 .68rem 'JetBrains Mono',monospace; background:rgba(7,9,12,.85); border:1px solid var(--c); color:#fff; }
+  .hotspot.open .tip { opacity:1; transform:translateX(-50%); }
+
+  /* Escáner de carga */
+  .scan { position:absolute; left:0; right:0; height:2px; background:linear-gradient(90deg,transparent,var(--cyan),transparent); box-shadow:0 0 20px var(--cyan); animation: scan 1.4s ease-in-out infinite alternate; }
+  @keyframes scan { from { top:8%; } to { top:92%; } }
+  .corner { position:absolute; width:16px; height:16px; border-color:rgba(34,227,255,.55); }
+  .loadbar { position:absolute; top:0; bottom:0; width:35%; background:linear-gradient(90deg,transparent,var(--cyan),transparent); animation: sweep 1.2s linear infinite; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,*::before,*::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+  }
+</style>
+</head>
+
+<body class="font-sans min-h-screen antialiased">
+<main class="mx-auto w-full max-w-md md:max-w-5xl px-4 pb-16 pt-5">
+
+  <!-- Cabecera + consulta por patente -->
+  <header class="flex items-center justify-between mb-5">
+    <div>
+      <p class="label">Taller · seguimiento en vivo</p>
+      <h1 class="thin text-3xl leading-tight text-white">Tu vehículo,<br>en tiempo real</h1>
+    </div>
+    <div class="readout text-[.7rem] text-cyan/80 text-right"><span id="clock">--:--:--</span><br><span class="text-[#6f8294]">SISTEMA ACTIVO</span></div>
+  </header>
+
+  <form id="lookup" class="glass p-2 flex items-center gap-2 mb-6" autocomplete="off">
+    <label for="patente" class="sr-only">Patente</label>
+    <input id="patente" maxlength="10" placeholder="AB 123 CD" value=""
+      class="readout flex-1 min-w-0 bg-transparent px-4 py-3 text-xl uppercase tracking-[.25em] text-white placeholder-white/20 outline-none focus-visible:ring-1 focus-visible:ring-cyan rounded-xl">
+    <button type="submit" class="magnet btn-main readout rounded-xl px-5 py-3 text-sm text-white">Consultar</button>
+  </form>
+  <p id="error" class="readout text-xs text-amber -mt-4 mb-4 hidden" role="alert">Error al buscar la patente.</p>
+  <div id="loader" class="hidden relative h-0.5 -mt-3 mb-5 overflow-hidden rounded bg-white/10" aria-hidden="true"><div class="loadbar"></div></div>
+
+  <section id="view" class="grid gap-4 md:grid-cols-5 hidden">
+
+    <!-- Escena 3D -->
+    <div class="glass relative overflow-hidden md:col-span-3 reveal" style="--d:0ms">
+      <div id="stage" class="relative w-full h-[340px] md:h-[460px]">
+        <canvas id="gl" class="absolute inset-0 w-full h-full touch-pan-y"></canvas>
+        <div id="hotspots" class="absolute inset-0 pointer-events-none"></div>
+        <div id="scanner" class="absolute inset-0 hidden pointer-events-none"><div class="scan"></div></div>
+        <i class="corner left-3 top-3 border-l border-t"></i><i class="corner right-3 top-3 border-r border-t"></i>
+        <i class="corner left-3 bottom-3 border-l border-b"></i><i class="corner right-3 bottom-3 border-r border-b"></i>
+      </div>
+      <div class="flex items-center justify-between px-5 py-3 border-t border-white/5">
+        <div>
+          <p class="label">Vehículo</p>
+          <p id="vehiculo" class="thin text-lg text-white">—</p>
+        </div>
+        <div class="flex gap-3 readout text-[.68rem] text-[#8fa3b5]">
+          <span class="flex items-center gap-1.5"><b class="h-2 w-2 rounded-full bg-amber"></b>En trabajo</span>
+          <span class="flex items-center gap-1.5"><b class="h-2 w-2 rounded-full bg-ok"></b>Listo</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Columna derecha: HUD + widgets -->
+    <div class="md:col-span-2 grid gap-4 content-start">
+
+      <!-- HUD timeline -->
+      <div class="glass p-5 reveal" style="--d:120ms">
+        <div class="flex items-end justify-between mb-4">
+          <div>
+            <p class="label">Fase actual</p>
+            <p id="faseNombre" class="thin text-2xl text-white">—</p>
+          </div>
+          <p class="readout text-3xl text-cyan"><span id="faseNum">0</span><span class="text-base text-[#52667a]">/5</span></p>
+        </div>
+        <div id="hud" class="grid grid-cols-5 gap-1.5"></div>
+      </div>
+
+      <!-- Widgets -->
+      <div class="grid grid-cols-2 gap-4">
+        <div class="glass p-4 reveal" style="--d:240ms">
+          <svg class="h-5 w-5 text-cyan mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5c0-1 1-1.8 2.5-1.8s2.5.8 2.5 1.8-1 1.6-2.5 2-2.5 1-2.5 2 1 1.8 2.5 1.8 2.5-.8 2.5-1.8"/></svg>
+          <p class="label">Costo estimado</p>
+          <p class="readout text-xl text-white mt-1">$<span id="costo" data-to="0">0</span></p>
+        </div>
+        <div class="glass p-4 reveal" style="--d:320ms">
+          <svg class="h-5 w-5 text-cyan mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="12" cy="13" r="8"/><path d="M12 13V8M9 2.5h6"/></svg>
+          <p class="label">Tiempo restante</p>
+          <p class="readout text-xl text-white mt-1"><span id="tiempo">0</span><span class="text-sm text-[#6f8294]"> h</span></p>
+        </div>
+      </div>
+
+      <div class="glass p-5 reveal" style="--d:400ms">
+        <div class="flex items-center gap-2 mb-3">
+          <svg class="h-5 w-5 text-cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M14.5 6.5a4 4 0 0 0-5 5L3 18l3 3 6.5-6.5a4 4 0 0 0 5-5l-2.5 2.5-2.5-.5-.5-2.5z"/></svg>
+          <p class="label">Piezas reemplazadas</p>
+        </div>
+        <ul id="piezas" class="grid gap-2 readout text-sm text-[#c4d2de]"></ul>
+      </div>
+    </div>
+
+    <!-- Diagnóstico del mecánico -->
+    <div class="glass p-5 md:col-span-5 reveal" style="--d:480ms">
+      <p class="label mb-2">Diagnóstico del mecánico</p>
+      <p id="diagnostico" class="thin text-lg leading-relaxed text-[#cfdbe6] max-w-2xl">—</p>
+      <button id="notificar" type="button" class="magnet mt-4 readout text-sm rounded-xl px-5 py-3 border border-white/15 bg-white/5 text-white">Avisarme cuando esté listo</button>
+    </div>
+  </section>
+</main>
+
+<script>
+/* ==========================================================
+   CONEXIÓN CON API DE DJANGO REST
+   ========================================================== */
+const FASES = ['Recibido','Diagnóstico','Repuestos','En reparación','Listo'];
+
+async function fetchEstado(patente) {
+  let r;
+  try { r = await fetch(`/api/estado/?patente=${encodeURIComponent(patente)}`, { headers: { Accept: 'application/json' } }); }
+  catch { throw new Error('Sin conexión. Intentá de nuevo.'); }
+  if (r.status === 429) throw new Error('Demasiadas consultas. Esperá un minuto.');
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.detail || 'Vehículo no encontrado o sin órdenes activas');
+  }
+  return r.json();
+}
+
+/* ---------- Reloj HUD ---------- */
+const clock = document.getElementById('clock');
+setInterval(() => clock.textContent = new Date().toLocaleTimeString('es-AR', { hour12:false }), 1000);
+
+/* ---------- Revelación progresiva ---------- */
+const reveals = [...document.querySelectorAll('.reveal')];
+const viewSection = document.getElementById('view');
+const showAll = () => reveals.forEach(el => el.classList.add('on'));
+const hideAll = () => reveals.forEach(el => el.classList.remove('on'));
+
+/* ---------- Botones magnéticos ---------- */
+document.querySelectorAll('.magnet').forEach(b => {
+  b.addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch') return;
+    const r = b.getBoundingClientRect();
+    const x = (e.clientX - r.left - r.width / 2) * .18, y = (e.clientY - r.top - r.height / 2) * .3;
+    b.style.transform = `translate(${x}px, ${y}px)`;
+  });
+  b.addEventListener('pointerleave', () => b.style.transform = '');
+});
+
+/* ---------- HUD de fases ---------- */
+const hud = document.getElementById('hud');
+hud.innerHTML = FASES.map((f, i) => `
+  <div class="node" data-i="${i + 1}">
+    <div class="seg"><i></i></div>
+    <div class="flex items-center gap-1.5 mt-3"><span class="dot h-2 w-2 rounded-full bg-white/15 shrink-0"></span></div>
+    <p class="name readout text-[.58rem] leading-tight mt-1 text-[#52667a] break-words">${f}</p>
+  </div>`).join('');
+
+function renderHUD(fase) {
+  fase = Math.min(Math.max(parseInt(fase, 10) || 1, 1), 5);
+  [...hud.children].forEach((n, i) => {
+    const idx = i + 1, seg = n.querySelector('.seg');
+    n.classList.remove('done', 'now'); seg.classList.remove('done', 'now');
+    setTimeout(() => {
+      const cls = idx < fase || fase === 5 ? 'done' : idx === fase ? 'now' : '';
+      if (cls) { n.classList.add(cls); seg.classList.add(cls); }
+    }, 300 + i * 160);
+  });
+  document.getElementById('faseNombre').textContent = FASES[fase - 1];
+  document.getElementById('faseNum').textContent = fase;
+}
+
+/* ---------- Contador numérico ---------- */
+function countTo(el, to, dec = 0, ms = 1200) {
+  const t0 = performance.now();
+  (function tick(t) {
+    const p = Math.min((t - t0) / ms, 1), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = (to * e).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    if (p < 1) requestAnimationFrame(tick);
+  })(t0);
+}
+
+/* ---------- Flujo de consulta ---------- */
+const form = document.getElementById('lookup'), err = document.getElementById('error');
+const loader = document.getElementById('loader');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const p = document.getElementById('patente').value.replace(/[\s-]/g, '').toUpperCase();
+
+  if (!/^[A-Z0-9]{6,7}$/.test(p)) {
+    err.textContent = 'Ingresá una patente válida (6 o 7 caracteres).';
+    err.classList.remove('hidden');
+    return;
+  }
+
+  err.classList.add('hidden');
+  hideAll();
+  window.TALLER?.setHotspots([]);
+  const btn = form.querySelector('button[type=submit]');
+  btn.disabled = true; btn.textContent = 'Escaneando…'; loader.classList.remove('hidden');
+
+  try {
+    const data = await fetchEstado(p);
+    viewSection.classList.remove('hidden');
+    void viewSection.offsetWidth;            // fuerza reflow: el fade-in anima también en la 1ª consulta
+    render(data);
+  } catch (error) {
+    err.textContent = error.message || 'No pudimos consultar el estado. Intentá de nuevo.';
+    err.classList.remove('hidden');
+    viewSection.classList.add('hidden');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Consultar'; loader.classList.add('hidden');
+  }
+});
+
+function render(d) {
+  document.getElementById('vehiculo').textContent = d.vehiculo || '—';
+  renderHUD(d.fase);
+  countTo(document.getElementById('costo'), Number(d.costo) || 0);
+  countTo(document.getElementById('tiempo'), Number(d.horas) || 0, 1);
+  document.getElementById('diagnostico').textContent = d.diagnostico || 'Sin diagnóstico registrado todavía.';
+
+  const piezasList = document.getElementById('piezas');
+  if (d.piezas && d.piezas.length > 0) {
+    piezasList.innerHTML = d.piezas.map(p =>
+      `<li class="flex items-center gap-2"><svg class="h-3.5 w-3.5 text-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>${esc(p)}</li>`).join('');
+  } else {
+    piezasList.innerHTML = '<li class="text-slate-500 italic text-xs">Aún no se asignaron repuestos</li>';
+  }
+
+  showAll();
+  window.TALLER?.setHotspots(d.zonas || []);
+}
+
+document.getElementById('notificar').addEventListener('click', e => {
+  e.currentTarget.textContent = 'Aviso activado'; e.currentTarget.classList.add('border-cyan/60', 'text-cyan');
+});
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const canvas = document.getElementById('gl'), stage = document.getElementById('stage'), layer = document.getElementById('hotspots');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x07090c, 0.06);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+camera.position.set(6.5, 3, 7);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.enablePan = false; controls.enableZoom = false;
+controls.autoRotate = true; controls.autoRotateSpeed = 1.1;
+controls.minPolarAngle = 0.9; controls.maxPolarAngle = 1.5;
+// Pausar auto-rotación mientras el usuario interactúa
+controls.addEventListener('start', () => controls.autoRotate = false);
+controls.addEventListener('end', () => setTimeout(() => controls.autoRotate = true, 2500));
+
+scene.add(new THREE.AmbientLight(0x6688aa, 0.6));
+const key = new THREE.PointLight(0x22e3ff, 40, 20); key.position.set(4, 5, 3); scene.add(key);
+
+// Piso tipo plataforma
+const grid = new THREE.GridHelper(20, 40, 0x22e3ff, 0x123344);
+grid.material.transparent = true; grid.material.opacity = 0.35; grid.position.y = -0.55; scene.add(grid);
+const ring = new THREE.Mesh(new THREE.RingGeometry(3.4, 3.43, 96), new THREE.MeshBasicMaterial({ color: 0x22e3ff, side: THREE.DoubleSide, transparent: true, opacity: .8 }));
+ring.rotation.x = -Math.PI / 2; ring.position.y = -0.54; scene.add(ring);
+
+/* ---------- Auto placeholder (wireframe procedural) ----------
+   Para inyectar el modelo real: llamá loadCar('/static/models/auto.glb')
+   y ajustá ANCLAS (posiciones de hotspots) a tu modelo.             */
+const car = new THREE.Group(); scene.add(car);
+const edge = new THREE.LineBasicMaterial({ color: 0x22e3ff, transparent: true, opacity: .9 });
+const fill = new THREE.MeshStandardMaterial({ color: 0x0d1117, metalness: .9, roughness: .3, transparent: true, opacity: .85 });
+function part(geo, x, y, z) {
+  const m = new THREE.Mesh(geo, fill); m.position.set(x, y, z);
+  m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edge)); car.add(m); return m;
+}
+function buildPlaceholder() {
+  part(new THREE.BoxGeometry(4.4, .7, 1.9), 0, .1, 0);            // carrocería
+  part(new THREE.BoxGeometry(2.1, .65, 1.6), -.3, .75, 0);        // cabina
+  part(new THREE.BoxGeometry(1.2, .22, 1.5), 1.55, .5, 0);        // capó
+  const w = new THREE.CylinderGeometry(.45, .45, .35, 24);
+  [[1.4, -.2, .95], [1.4, -.2, -.95], [-1.4, -.2, .95], [-1.4, -.2, -.95]].forEach(p => {
+    const m = part(w, ...p); m.rotation.x = Math.PI / 2;
+  });
+}
+buildPlaceholder();
+
+// Reemplazo por GLB real
+window.loadCar = url => new GLTFLoader().load(url, g => {
+  car.clear(); g.scene.scale.setScalar(1); car.add(g.scene);
+});
+
+/* ---------- Anclas 3D de los hotspots ---------- */
+const ANCLAS = {
+  motor:    new THREE.Vector3( 1.6, .7,  0),
+  rueda_di: new THREE.Vector3( 1.4, -.2,  1.2),
+  rueda_dd: new THREE.Vector3( 1.4, -.2, -1.2),
+  rueda_ti: new THREE.Vector3(-1.4, -.2,  1.2),
+  rueda_td: new THREE.Vector3(-1.4, -.2, -1.2)
+};
+let spots = [];
+const glow = new THREE.PointLight(0xff8a1f, 0, 6); car.add(glow);
+
+window.TALLER = {
+  setHotspots(zonas) {
+    layer.innerHTML = ''; spots = []; glow.intensity = 0;
+    zonas.forEach(z => {
+      const pos = ANCLAS[z.id];
+      if (!pos) return;                                    // ignora zonas que el frontend no conoce
+      const nota = z.nota || z.id;
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = `hotspot ${z.estado === 'ok' ? 'ok' : 'work'}`;
+      el.setAttribute('aria-label', nota);
+      const tip = document.createElement('span');
+      tip.className = 'tip'; tip.textContent = nota;      // textContent: nunca HTML del servidor
+      el.appendChild(tip);
+      el.addEventListener('click', () => { layer.querySelectorAll('.open').forEach(o => o !== el && o.classList.remove('open')); el.classList.toggle('open'); });
+      layer.appendChild(el);
+      spots.push({ el, pos });
+      if (z.id === 'motor' && z.estado === 'work') { glow.position.copy(ANCLAS.motor); glow.intensity = 25; }
+    });
+  }
+};
+
+/* ---------- Loop ---------- */
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage); resize();
+
+const v = new THREE.Vector3(), c0 = new THREE.Vector3();
+(function loop(t) {
+  requestAnimationFrame(loop);
+  if (!stage.clientWidth) return;          // sección oculta: no gastar GPU
+  controls.update();
+  glow.intensity && (glow.intensity = 18 + Math.sin(t / 260) * 8);
+  const w = stage.clientWidth, h = stage.clientHeight;
+  c0.set(0, 0, 0).project(camera);
+  spots.forEach(({ el, pos }) => {
+    v.copy(pos).applyMatrix4(car.matrixWorld).project(camera);
+    el.style.transform = `translate(${(v.x * .5 + .5) * w}px, ${(-v.y * .5 + .5) * h}px)`;
+    const behind = v.z > c0.z + 0.02;                    // oculta hotspots del lado opuesto
+    el.style.opacity = behind ? 0 : 1; el.style.pointerEvents = behind ? 'none' : 'auto';
+  });
+  renderer.render(scene, camera);
+})(0);
+
+</script>
+</body>
+</html>
