@@ -15,6 +15,9 @@ tailwind.config = { theme: { extend: {
   colors: { ink: '#07090c', carbon: '#0d1117', plate: '#141a22', cyan: '#22e3ff', volt: '#2f7bff', amber: '#ff8a1f', ok: '#2dff9a' }
 }}}
 </script>
+<!-- GSAP + ScrollTrigger (versión fija). Si no cargan, la vista funciona igual sin scroll. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -31,7 +34,6 @@ tailwind.config = { theme: { extend: {
       #07090c;
     padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
   }
-  /* Cristal esmerilado */
   .glass {
     background: linear-gradient(145deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
     backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
@@ -43,17 +45,21 @@ tailwind.config = { theme: { extend: {
   .readout { font-family:'JetBrains Mono',monospace; font-weight:300; letter-spacing:-.02em; }
   .thin { font-family:'Outfit',sans-serif; font-weight:200; }
 
-  /* Botón con compresión magnética */
   .magnet { transition: transform .25s cubic-bezier(.2,.9,.3,1.2), box-shadow .25s, background .25s; will-change: transform; }
   .magnet:active { transform: scale(.94) !important; box-shadow: 0 0 0 1px var(--cyan) inset, 0 0 30px -4px var(--cyan); }
   .btn-main { background: linear-gradient(180deg, rgba(34,227,255,.22), rgba(34,227,255,.06)); border:1px solid rgba(34,227,255,.5); box-shadow: 0 0 24px -8px var(--cyan); }
   .btn-main:hover { box-shadow: 0 0 34px -4px var(--cyan); }
+  .btn-main:disabled { opacity:.6; }
 
-  /* Revelación progresiva */
   .reveal { opacity:0; transform: translateY(18px); filter: blur(6px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1), filter .7s ease; transition-delay: var(--d,0ms); }
   .reveal.on { opacity:1; transform:none; filter:none; }
 
-  /* HUD timeline */
+  /* Escena sticky: se queda fija mientras el scroll recorre la pista */
+  .scene { position:sticky; top:0; height:100vh; height:100svh; padding:12px 0 16px; }
+  .scene-static { position:relative; height:auto; }
+  .scene-static .glass-panel { height:520px; }
+  .glass-panel { position:relative; overflow:hidden; height:100%; border-radius:22px; }
+
   .seg { position:relative; height:6px; border-radius:2px; background:rgba(255,255,255,.08); overflow:hidden; }
   .seg > i { position:absolute; inset:0; transform-origin:left; transform:scaleX(0); transition: transform 1s cubic-bezier(.2,.8,.2,1); background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
   .seg.done > i { transform:scaleX(1); }
@@ -63,20 +69,23 @@ tailwind.config = { theme: { extend: {
   .node.now .dot { background: var(--amber); box-shadow: 0 0 0 4px rgba(255,138,31,.18), 0 0 18px var(--amber); animation: pulse 1.6s ease-in-out infinite; }
   .node.done .dot { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
   .node.now .name { color:#fff; } .node.done .name { color:#9fdfff; }
+  .node.cursor .name { color:#fff; text-decoration: underline; text-underline-offset: 4px; }
+  .node.cursor .seg { outline:1px solid rgba(255,255,255,.35); outline-offset:2px; }
   @keyframes pulse { 50% { transform: scale(1.35); } }
 
-  /* Hotspots 3D */
-  .hotspot { position:absolute; left:0; top:0; width:28px; height:28px; margin:-14px 0 0 -14px; border-radius:50%; pointer-events:auto; cursor:pointer; transition: opacity .3s; --c: var(--amber); }
-  .hotspot::before { content:""; position:absolute; inset:9px; border-radius:50%; background: var(--c); box-shadow: 0 0 14px var(--c); }
+  /* Hotspots 3D Optimizados (Punto 3) */
+  .hotspot { position:absolute; left:0; top:0; width:30px; height:30px; margin:-15px 0 0 -15px; border-radius:50%; pointer-events:auto; cursor:pointer; transition: opacity .3s, transform .25s; --c: var(--amber); }
+  .hotspot:hover, .hotspot.open { transform: scale(1.18); z-index: 20; }
+  .hotspot::before { content:""; position:absolute; inset:9px; border-radius:50%; background: var(--c); box-shadow: 0 0 16px var(--c); }
   .hotspot::after { content:""; position:absolute; inset:0; border-radius:50%; border:1px solid var(--c); animation: ring 2s ease-out infinite; }
   .hotspot.ok { --c: var(--ok); } .hotspot.work { --c: var(--amber); }
-  @keyframes ring { from { transform:scale(.4); opacity:1; } to { transform:scale(1.5); opacity:0; } }
-  .tip { position:absolute; left:50%; bottom:130%; transform:translateX(-50%) translateY(6px); white-space:nowrap; opacity:0; pointer-events:none; transition:.25s; padding:6px 10px; border-radius:10px; font:400 .68rem 'JetBrains Mono',monospace; background:rgba(7,9,12,.85); border:1px solid var(--c); color:#fff; }
-  .hotspot.open .tip { opacity:1; transform:translateX(-50%); }
+  @keyframes ring { from { transform:scale(.4); opacity:1; } to { transform:scale(1.6); opacity:0; } }
+  .tip { position:absolute; left:50%; bottom:135%; transform:translateX(-50%) translateY(6px); white-space:nowrap; opacity:0; pointer-events:none; transition:.25s; padding:6px 11px; border-radius:10px; font:400 .68rem 'JetBrains Mono',monospace; background:rgba(7,9,12,.92); border:1px solid var(--c); color:#fff; box-shadow: 0 10px 25px rgba(0,0,0,.6); }
+  .hotspot.open .tip, .hotspot:hover .tip { opacity:1; transform:translateX(-50%) translateY(0); }
 
-  /* Escáner de carga */
-  .scan { position:absolute; left:0; right:0; height:2px; background:linear-gradient(90deg,transparent,var(--cyan),transparent); box-shadow:0 0 20px var(--cyan); animation: scan 1.4s ease-in-out infinite alternate; }
-  @keyframes scan { from { top:8%; } to { top:92%; } }
+  .chip-zona { transition: all .2s ease; }
+  .chip-zona.active { border-color: var(--cyan); background: rgba(34,227,255,.14); color: #fff; box-shadow: 0 0 16px -4px var(--cyan); }
+
   .corner { position:absolute; width:16px; height:16px; border-color:rgba(34,227,255,.55); }
   .loadbar { position:absolute; top:0; bottom:0; width:35%; background:linear-gradient(90deg,transparent,var(--cyan),transparent); animation: sweep 1.2s linear infinite; }
 
@@ -89,7 +98,6 @@ tailwind.config = { theme: { extend: {
 <body class="font-sans min-h-screen antialiased">
 <main class="mx-auto w-full max-w-md md:max-w-5xl px-4 pb-16 pt-5">
 
-  <!-- Cabecera + consulta por patente -->
   <header class="flex items-center justify-between mb-5">
     <div>
       <p class="label">Taller · seguimiento en vivo</p>
@@ -107,72 +115,98 @@ tailwind.config = { theme: { extend: {
   <p id="error" class="readout text-xs text-amber -mt-4 mb-4 hidden" role="alert">Error al buscar la patente.</p>
   <div id="loader" class="hidden relative h-0.5 -mt-3 mb-5 overflow-hidden rounded bg-white/10" aria-hidden="true"><div class="loadbar"></div></div>
 
-  <section id="view" class="grid gap-4 md:grid-cols-5 hidden">
+  <section id="view" class="hidden">
 
-    <!-- Escena 3D -->
-    <div class="glass relative overflow-hidden md:col-span-3 reveal" style="--d:0ms">
-      <div id="stage" class="relative w-full h-[340px] md:h-[460px]">
-        <canvas id="gl" class="absolute inset-0 w-full h-full touch-pan-y"></canvas>
-        <div id="hotspots" class="absolute inset-0 pointer-events-none"></div>
-        <div id="scanner" class="absolute inset-0 hidden pointer-events-none"><div class="scan"></div></div>
-        <i class="corner left-3 top-3 border-l border-t"></i><i class="corner right-3 top-3 border-r border-t"></i>
-        <i class="corner left-3 bottom-3 border-l border-b"></i><i class="corner right-3 bottom-3 border-r border-b"></i>
-      </div>
-      <div class="flex items-center justify-between px-5 py-3 border-t border-white/5">
-        <div>
-          <p class="label">Vehículo</p>
-          <p id="vehiculo" class="thin text-lg text-white">—</p>
-        </div>
-        <div class="flex gap-3 readout text-[.68rem] text-[#8fa3b5]">
-          <span class="flex items-center gap-1.5"><b class="h-2 w-2 rounded-full bg-amber"></b>En trabajo</span>
-          <span class="flex items-center gap-1.5"><b class="h-2 w-2 rounded-full bg-ok"></b>Listo</span>
+    <!-- Pista de scroll: 260vh de recorrido; la escena se queda fija dentro -->
+    <div id="track" class="relative" style="height:260vh">
+      <div id="scene" class="scene">
+        <div class="glass-panel">
+
+          <div id="stage" class="absolute inset-0">
+            <canvas id="gl" class="absolute inset-0 w-full h-full"></canvas>
+            <div id="hotspots" class="absolute inset-0 pointer-events-none"></div>
+            <i class="corner left-3 top-3 border-l border-t"></i><i class="corner right-3 top-3 border-r border-t"></i>
+            <i class="corner left-3 bottom-3 border-l border-b"></i><i class="corner right-3 bottom-3 border-r border-b"></i>
+          </div>
+
+          <div class="absolute top-4 left-5 right-16 pointer-events-none">
+            <p class="label">Vehículo</p>
+            <p id="vehiculo" class="thin text-xl text-white">—</p>
+            <p id="stepLabel" class="label mt-3 text-cyan/80">Proceso</p>
+            <p id="stepText" class="thin text-sm leading-snug text-[#cfdbe6] max-w-xs mt-1" aria-live="polite"></p>
+          </div>
+
+          <p class="readout absolute top-4 right-5 text-3xl text-cyan"><span id="faseNum">0</span><span class="text-base text-[#52667a]">/5</span></p>
+
+          <!-- Panel flotante de inspección de Hotspot 3D (Punto 3) -->
+          <div id="zonaDetalleBox" class="glass absolute top-28 right-4 left-4 md:left-auto md:w-80 p-3.5 hidden pointer-events-auto border border-cyan/30">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <span id="zonaDetalleTitulo" class="readout text-xs text-cyan font-medium uppercase">—</span>
+              <span id="zonaDetalleBadge" class="readout text-[10px] px-2 py-0.5 rounded-full">—</span>
+            </div>
+            <p id="zonaDetalleTexto" class="thin text-xs text-[#cfdbe6] leading-relaxed">—</p>
+          </div>
+
+          <div class="glass absolute bottom-3 left-3 right-3 p-3">
+            <!-- Selector interactivo de Zonas 3D (Punto 3) -->
+            <div id="zonasBar" class="flex items-center gap-1.5 overflow-x-auto pb-2.5 mb-2.5 border-b border-white/10"></div>
+
+            <div class="flex items-center justify-between mb-2">
+              <p class="label">Estado real</p>
+              <p id="faseNombre" class="thin text-sm text-white">—</p>
+            </div>
+            <div id="hud" class="grid grid-cols-5 gap-1.5"></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Columna derecha: HUD + widgets -->
-    <div class="md:col-span-2 grid gap-4 content-start">
-
-      <!-- HUD timeline -->
-      <div class="glass p-5 reveal" style="--d:120ms">
-        <div class="flex items-end justify-between mb-4">
-          <div>
-            <p class="label">Fase actual</p>
-            <p id="faseNombre" class="thin text-2xl text-white">—</p>
-          </div>
-          <p class="readout text-3xl text-cyan"><span id="faseNum">0</span><span class="text-base text-[#52667a]">/5</span></p>
-        </div>
-        <div id="hud" class="grid grid-cols-5 gap-1.5"></div>
-      </div>
-
-      <!-- Widgets -->
+    <!-- Contenido que sigue al scroll -->
+    <div class="grid gap-4 md:grid-cols-2 mt-4">
       <div class="grid grid-cols-2 gap-4">
-        <div class="glass p-4 reveal" style="--d:240ms">
+        <div class="glass p-4 reveal" style="--d:0ms">
           <svg class="h-5 w-5 text-cyan mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5c0-1 1-1.8 2.5-1.8s2.5.8 2.5 1.8-1 1.6-2.5 2-2.5 1-2.5 2 1 1.8 2.5 1.8 2.5-.8 2.5-1.8"/></svg>
           <p class="label">Costo estimado</p>
-          <p class="readout text-xl text-white mt-1">$<span id="costo" data-to="0">0</span></p>
+          <p class="readout text-xl text-white mt-1">$<span id="costo">0</span></p>
         </div>
-        <div class="glass p-4 reveal" style="--d:320ms">
+        <div class="glass p-4 reveal" style="--d:80ms">
           <svg class="h-5 w-5 text-cyan mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="12" cy="13" r="8"/><path d="M12 13V8M9 2.5h6"/></svg>
           <p class="label">Tiempo restante</p>
           <p class="readout text-xl text-white mt-1"><span id="tiempo">0</span><span class="text-sm text-[#6f8294]"> h</span></p>
         </div>
       </div>
 
-      <div class="glass p-5 reveal" style="--d:400ms">
+      <div class="glass p-5 reveal" style="--d:160ms">
         <div class="flex items-center gap-2 mb-3">
           <svg class="h-5 w-5 text-cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M14.5 6.5a4 4 0 0 0-5 5L3 18l3 3 6.5-6.5a4 4 0 0 0 5-5l-2.5 2.5-2.5-.5-.5-2.5z"/></svg>
           <p class="label">Piezas reemplazadas</p>
         </div>
         <ul id="piezas" class="grid gap-2 readout text-sm text-[#c4d2de]"></ul>
       </div>
-    </div>
 
-    <!-- Diagnóstico del mecánico -->
-    <div class="glass p-5 md:col-span-5 reveal" style="--d:480ms">
-      <p class="label mb-2">Diagnóstico del mecánico</p>
-      <p id="diagnostico" class="thin text-lg leading-relaxed text-[#cfdbe6] max-w-2xl">—</p>
-      <button id="notificar" type="button" class="magnet mt-4 readout text-sm rounded-xl px-5 py-3 border border-white/15 bg-white/5 text-white">Avisarme cuando esté listo</button>
+      <!-- Diagnóstico, Aprobación de Presupuesto (Punto 1) y Alertas (Punto 2) -->
+      <div class="glass p-5 md:col-span-2 reveal" style="--d:240ms">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <p class="label">Diagnóstico y Presupuesto del Taller</p>
+          <span id="badgePresupuesto" class="readout text-xs px-3 py-1 rounded-full border border-amber/40 bg-amber/10 text-amber">
+            PENDIENTE DE APROBACIÓN
+          </span>
+        </div>
+        <p id="diagnostico" class="thin text-lg leading-relaxed text-[#cfdbe6] max-w-2xl">—</p>
+
+        <div id="accionesPresupuesto" class="flex flex-wrap items-center gap-3 mt-5 pt-4 border-t border-white/10">
+          <button id="btnAprobar" type="button" class="magnet readout text-sm rounded-xl px-5 py-3 border border-ok/50 bg-ok/15 text-ok hover:bg-ok/25 transition">
+            ✓ Aprobar presupuesto
+          </button>
+          <button id="btnRechazar" type="button" class="magnet readout text-sm rounded-xl px-5 py-3 border border-amber/40 bg-amber/10 text-amber hover:bg-amber/20 transition">
+            ✕ Solicitar revisión
+          </button>
+          <button id="notificar" type="button" class="magnet readout text-sm rounded-xl px-5 py-3 border border-white/15 bg-white/5 text-white ml-auto">
+            🔔 Avisarme cuando esté listo
+          </button>
+        </div>
+        <p id="msgPresupuesto" class="readout text-xs text-ok mt-3 hidden"></p>
+      </div>
     </div>
   </section>
 </main>
@@ -183,6 +217,14 @@ tailwind.config = { theme: { extend: {
    ========================================================== */
 const FASES = ['Recibido','Diagnóstico','Repuestos','En reparación','Listo'];
 
+const PROCESO = [
+  { titulo: 'Recepción',   texto: 'Registramos tu auto y lo asignamos a un mecánico de confianza.' },
+  { titulo: 'Diagnóstico', texto: 'Revisamos el vehículo punto por punto y te explicamos qué encontramos.' },
+  { titulo: 'Repuestos',   texto: 'Pedimos y verificamos cada pieza antes de tocar el motor.' },
+  { titulo: 'Reparación',  texto: 'Trabajamos zona por zona, con control de calidad en cada etapa.' },
+  { titulo: 'Entrega',     texto: 'Prueba de ruta, revisión final y tu auto listo para retirar.' }
+];
+
 async function fetchEstado(patente) {
   let r;
   try { r = await fetch(`/api/estado/?patente=${encodeURIComponent(patente)}`, { headers: { Accept: 'application/json' } }); }
@@ -190,12 +232,12 @@ async function fetchEstado(patente) {
   if (r.status === 429) throw new Error('Demasiadas consultas. Esperá un minuto.');
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));
-    throw new Error(body.detail || 'Vehículo no encontrado o sin órdenes activas');
+    throw new Error(body.detail || body.error || 'Vehículo no encontrado o sin órdenes activas');
   }
   return r.json();
 }
 
-/* ---------- Reloj HUD ---------- */
+/* ---------- Reloj ---------- */
 const clock = document.getElementById('clock');
 setInterval(() => clock.textContent = new Date().toLocaleTimeString('es-AR', { hour12:false }), 1000);
 
@@ -216,7 +258,7 @@ document.querySelectorAll('.magnet').forEach(b => {
   b.addEventListener('pointerleave', () => b.style.transform = '');
 });
 
-/* ---------- HUD de fases ---------- */
+/* ---------- HUD de estado real ---------- */
 const hud = document.getElementById('hud');
 hud.innerHTML = FASES.map((f, i) => `
   <div class="node" data-i="${i + 1}">
@@ -249,6 +291,170 @@ function countTo(el, to, dec = 0, ms = 1200) {
   })(t0);
 }
 
+/* ==========================================================
+   SCROLL DE 5 PASOS (GSAP ScrollTrigger)
+   ========================================================== */
+const track = document.getElementById('track');
+const scene = document.getElementById('scene');
+const stepLabel = document.getElementById('stepLabel');
+const stepText = document.getElementById('stepText');
+let lastStep = -1, mainTrigger = null;
+
+function setStep(i) {
+  if (i === lastStep) return;
+  lastStep = i;
+  stepLabel.textContent = `${i + 1}/5 · ${PROCESO[i].titulo}`;
+  stepText.textContent = PROCESO[i].texto;
+  [...hud.children].forEach((n, k) => n.classList.toggle('cursor', k === i));
+}
+
+function setProgress(p) {
+  window.TALLER?.setScroll(p);
+  setStep(Math.min(4, Math.floor(p * 5)));
+}
+
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const hasScroll = !!(window.gsap && window.ScrollTrigger) && !reduced;
+
+if (hasScroll) {
+  gsap.registerPlugin(ScrollTrigger);
+  mainTrigger = ScrollTrigger.create({
+    trigger: track,
+    start: 'top top',
+    end: 'bottom bottom',
+    scrub: 0.6,
+    onUpdate: self => setProgress(self.progress)
+  });
+} else {
+  track.style.height = 'auto';
+  scene.classList.add('scene-static');
+}
+
+/* ==========================================================
+   APROBACIÓN DE PRESUPUESTO ONLINE (PUNTO 1)
+   ========================================================== */
+let ordenActualId = null;
+
+function actualizarUIPresupuesto(estado) {
+  const badge = document.getElementById('badgePresupuesto');
+  const btnAprobar = document.getElementById('btnAprobar');
+  const btnRechazar = document.getElementById('btnRechazar');
+  const msg = document.getElementById('msgPresupuesto');
+  if (!badge || !btnAprobar || !btnRechazar) return;
+
+  msg?.classList.add('hidden');
+
+  if (estado === 'APROBADO') {
+    badge.textContent = '✓ PRESUPUESTO APROBADO';
+    badge.className = 'readout text-xs px-3 py-1 rounded-full border border-ok/50 bg-ok/15 text-ok';
+    btnAprobar.classList.add('hidden');
+    btnRechazar.classList.add('hidden');
+  } else if (estado === 'RECHAZADO') {
+    badge.textContent = '⚠ EN REVISIÓN DE COSTOS';
+    badge.className = 'readout text-xs px-3 py-1 rounded-full border border-amber/50 bg-amber/15 text-amber';
+    btnAprobar.classList.remove('hidden');
+    btnRechazar.classList.add('hidden');
+  } else {
+    badge.textContent = 'PENDIENTE DE APROBACIÓN';
+    badge.className = 'readout text-xs px-3 py-1 rounded-full border border-amber/40 bg-amber/10 text-amber';
+    btnAprobar.classList.remove('hidden');
+    btnRechazar.classList.remove('hidden');
+  }
+}
+
+async function enviarDecisionPresupuesto(accion) {
+  if (!ordenActualId) return;
+  const msg = document.getElementById('msgPresupuesto');
+  const btnAprobar = document.getElementById('btnAprobar');
+  const btnRechazar = document.getElementById('btnRechazar');
+  btnAprobar.disabled = true;
+  btnRechazar.disabled = true;
+
+  try {
+    const r = await fetch('/api/presupuesto/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orden_id: ordenActualId, accion })
+    });
+    const res = await r.json();
+    if (!r.ok) throw new Error(res.detail || 'Error al procesar la solicitud.');
+    actualizarUIPresupuesto(res.estado_presupuesto);
+    renderHUD(res.fase);
+    msg.textContent = res.mensaje;
+    msg.className = `readout text-xs mt-3 ${accion === 'aprobar' ? 'text-ok' : 'text-amber'}`;
+    msg.classList.remove('hidden');
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.className = 'readout text-xs mt-3 text-amber';
+    msg.classList.remove('hidden');
+  } finally {
+    btnAprobar.disabled = false;
+    btnRechazar.disabled = false;
+  }
+}
+
+document.getElementById('btnAprobar')?.addEventListener('click', () => enviarDecisionPresupuesto('aprobar'));
+document.getElementById('btnRechazar')?.addEventListener('click', () => enviarDecisionPresupuesto('rechazar'));
+
+/* ==========================================================
+   PANEL DE INSPECCIÓN DE ZONAS 3D (PUNTO 3)
+   ========================================================== */
+function mostrarDetalleZona(z) {
+  const box = document.getElementById('zonaDetalleBox');
+  const titulo = document.getElementById('zonaDetalleTitulo');
+  const badge = document.getElementById('zonaDetalleBadge');
+  const texto = document.getElementById('zonaDetalleTexto');
+  if (!box || !z) return;
+
+  titulo.textContent = z.nombre || z.nota || z.id;
+  if (z.estado === 'ok') {
+    badge.textContent = '✓ VERIFICADO';
+    badge.className = 'readout text-[10px] px-2 py-0.5 rounded-full bg-ok/15 text-ok border border-ok/40';
+  } else {
+    badge.textContent = '🔧 EN REVISIÓN';
+    badge.className = 'readout text-[10px] px-2 py-0.5 rounded-full bg-amber/15 text-amber border border-amber/40';
+  }
+  texto.textContent = z.detalle || z.nota || 'Inspección técnica activa sobre este subsistema.';
+  box.classList.remove('hidden');
+
+  document.querySelectorAll('.chip-zona').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.zona === z.id);
+  });
+}
+
+function renderZonasBar(zonas) {
+  const bar = document.getElementById('zonasBar');
+  const box = document.getElementById('zonaDetalleBox');
+  if (!bar) return;
+  box?.classList.add('hidden');
+
+  if (!zonas || !zonas.length) {
+    bar.innerHTML = '';
+    return;
+  }
+
+  bar.innerHTML = zonas.map(z => {
+    const dotColor = z.estado === 'ok' ? 'bg-ok' : 'bg-amber';
+    const label = z.nombre || z.nota || z.id;
+    return `
+      <button type="button" data-zona="${esc(z.id)}"
+        class="chip-zona readout text-[.65rem] whitespace-nowrap px-2.5 py-1 rounded-lg border border-white/10 bg-white/5 text-[#cfdbe6] flex items-center gap-1.5 hover:border-cyan/50">
+        <span class="h-1.5 w-1.5 rounded-full ${dotColor}"></span>
+        ${esc(label)}
+      </button>`;
+  }).join('');
+
+  bar.querySelectorAll('.chip-zona').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const z = zonas.find(item => item.id === btn.dataset.zona);
+      if (z) {
+        mostrarDetalleZona(z);
+        window.TALLER?.focusZona(z.id);
+      }
+    });
+  });
+}
+
 /* ---------- Flujo de consulta ---------- */
 const form = document.getElementById('lookup'), err = document.getElementById('error');
 const loader = document.getElementById('loader');
@@ -258,8 +464,8 @@ form.addEventListener('submit', async e => {
   e.preventDefault();
   const p = document.getElementById('patente').value.replace(/[\s-]/g, '').toUpperCase();
 
-  if (!/^[A-Z0-9]{6,7}$/.test(p)) {
-    err.textContent = 'Ingresá una patente válida (6 o 7 caracteres).';
+  if (!/^([A-Z]{3}\d{3}|[A-Z]{2}\d{3}[A-Z]{2})$/.test(p)) {
+    err.textContent = 'Ingresá una patente válida (ej.: AB123CD o ABC123).';
     err.classList.remove('hidden');
     return;
   }
@@ -273,8 +479,9 @@ form.addEventListener('submit', async e => {
   try {
     const data = await fetchEstado(p);
     viewSection.classList.remove('hidden');
-    void viewSection.offsetWidth;            // fuerza reflow: el fade-in anima también en la 1ª consulta
+    void viewSection.offsetWidth;
     render(data);
+    window.scrollTo({ top: viewSection.getBoundingClientRect().top + window.scrollY - 8, behavior: 'smooth' });
   } catch (error) {
     err.textContent = error.message || 'No pudimos consultar el estado. Intentá de nuevo.';
     err.classList.remove('hidden');
@@ -285,11 +492,20 @@ form.addEventListener('submit', async e => {
 });
 
 function render(d) {
+  ordenActualId = d.orden_id;
+  actualizarUIPresupuesto(d.estado_presupuesto);
+
   document.getElementById('vehiculo').textContent = d.vehiculo || '—';
   renderHUD(d.fase);
   countTo(document.getElementById('costo'), Number(d.costo) || 0);
   countTo(document.getElementById('tiempo'), Number(d.horas) || 0, 1);
-  document.getElementById('diagnostico').textContent = d.diagnostico || 'Sin diagnóstico registrado todavía.';
+
+  const diagLimpio = String(d.diagnostico || 'Sin diagnóstico registrado todavía.')
+    .replace('[PRESUPUESTO APROBADO]', '')
+    .replace('[REVISIÓN SOLICITADA]', '')
+    .replace('[AVISO ACTIVO]', '')
+    .trim();
+  document.getElementById('diagnostico').textContent = diagLimpio;
 
   const piezasList = document.getElementById('piezas');
   if (d.piezas && d.piezas.length > 0) {
@@ -300,11 +516,68 @@ function render(d) {
   }
 
   showAll();
-  window.TALLER?.setHotspots(d.zonas || []);
+  window.TALLER?.setCarModel(d.tipo_3d, d.modelo_glb, d.modelo_rot_y);
+  window.TALLER?.setHotspots(d.zonas || [], mostrarDetalleZona);
+  renderZonasBar(d.zonas || []);
+
+  if (mainTrigger) {
+    mainTrigger.refresh();
+    setProgress(mainTrigger.progress);
+  } else {
+    setStep(Math.min(4, Math.max(0, (parseInt(d.fase, 10) || 1) - 1)));
+  }
+
+  /* ==========================================================
+     ESTADO DEL BOTÓN DE NOTIFICACIÓN Y WHATSAPP (PUNTO 2)
+     ========================================================== */
+  const btnNotificar = document.getElementById('notificar');
+  if (d.aviso_activo) {
+    btnNotificar.textContent = '🔔 Aviso activado · Consultar por WhatsApp';
+    btnNotificar.classList.add('border-cyan/60', 'text-cyan');
+  } else {
+    btnNotificar.textContent = '🔔 Avisarme cuando esté listo';
+    btnNotificar.classList.remove('border-cyan/60', 'text-cyan');
+  }
+  btnNotificar.dataset.wa = d.whatsapp_taller_url || '';
 }
 
-document.getElementById('notificar').addEventListener('click', e => {
-  e.currentTarget.textContent = 'Aviso activado'; e.currentTarget.classList.add('border-cyan/60', 'text-cyan');
+document.getElementById('notificar').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  const msg = document.getElementById('msgPresupuesto');
+  if (!ordenActualId) return;
+
+  try {
+    const r = await fetch('/api/notificar/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orden_id: ordenActualId })
+    });
+    const res = await r.json();
+    btn.textContent = '🔔 Aviso activado · Abrir WhatsApp';
+    btn.classList.add('border-cyan/60', 'text-cyan');
+    if (msg && res.mensaje) {
+      msg.textContent = res.mensaje;
+      msg.className = 'readout text-xs mt-3 text-cyan';
+      msg.classList.remove('hidden');
+    }
+    if (btn.dataset.wa) {
+      window.open(btn.dataset.wa, '_blank');
+    }
+  } catch {
+    btn.textContent = '🔔 Aviso activado';
+    btn.classList.add('border-cyan/60', 'text-cyan');
+  }
+});
+
+// Si el cliente entra desde el link de WhatsApp (/?patente=KBH106), consulta automáticamente
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const pat = params.get('patente');
+  if (pat) {
+    const input = document.getElementById('patente');
+    input.value = pat.toUpperCase();
+    form.requestSubmit();
+  }
 });
 </script>
 
@@ -315,7 +588,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const canvas = document.getElementById('gl'), stage = document.getElementById('stage'), layer = document.getElementById('hotspots');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x07090c, 0.06);
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
@@ -325,81 +598,208 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.enablePan = false; controls.enableZoom = false;
 controls.autoRotate = true; controls.autoRotateSpeed = 1.1;
 controls.minPolarAngle = 0.9; controls.maxPolarAngle = 1.5;
-// Pausar auto-rotación mientras el usuario interactúa
 controls.addEventListener('start', () => controls.autoRotate = false);
-controls.addEventListener('end', () => setTimeout(() => controls.autoRotate = true, 2500));
+controls.addEventListener('end', () => setTimeout(() => { if (scrollTarget === 0) controls.autoRotate = true; }, 2500));
+canvas.style.touchAction = 'pan-y';
 
 scene.add(new THREE.AmbientLight(0x6688aa, 0.6));
 const key = new THREE.PointLight(0x22e3ff, 40, 20); key.position.set(4, 5, 3); scene.add(key);
 
-// Piso tipo plataforma
 const grid = new THREE.GridHelper(20, 40, 0x22e3ff, 0x123344);
 grid.material.transparent = true; grid.material.opacity = 0.35; grid.position.y = -0.55; scene.add(grid);
 const ring = new THREE.Mesh(new THREE.RingGeometry(3.4, 3.43, 96), new THREE.MeshBasicMaterial({ color: 0x22e3ff, side: THREE.DoubleSide, transparent: true, opacity: .8 }));
 ring.rotation.x = -Math.PI / 2; ring.position.y = -0.54; scene.add(ring);
 
-/* ---------- Auto placeholder (wireframe procedural) ----------
-   Para inyectar el modelo real: llamá loadCar('/static/models/auto.glb')
-   y ajustá ANCLAS (posiciones de hotspots) a tu modelo.             */
+const glow = new THREE.PointLight(0xff8a1f, 0, 6); scene.add(glow);
+
 const car = new THREE.Group(); scene.add(car);
-const edge = new THREE.LineBasicMaterial({ color: 0x22e3ff, transparent: true, opacity: .9 });
-const fill = new THREE.MeshStandardMaterial({ color: 0x0d1117, metalness: .9, roughness: .3, transparent: true, opacity: .85 });
-function part(geo, x, y, z) {
-  const m = new THREE.Mesh(geo, fill); m.position.set(x, y, z);
-  m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edge)); car.add(m); return m;
-}
-function buildPlaceholder() {
-  part(new THREE.BoxGeometry(4.4, .7, 1.9), 0, .1, 0);            // carrocería
-  part(new THREE.BoxGeometry(2.1, .65, 1.6), -.3, .75, 0);        // cabina
-  part(new THREE.BoxGeometry(1.2, .22, 1.5), 1.55, .5, 0);        // capó
-  const w = new THREE.CylinderGeometry(.45, .45, .35, 24);
-  [[1.4, -.2, .95], [1.4, -.2, -.95], [-1.4, -.2, .95], [-1.4, -.2, -.95]].forEach(p => {
-    const m = part(w, ...p); m.rotation.x = Math.PI / 2;
-  });
-}
-buildPlaceholder();
+let scrollTarget = 0;
 
-// Reemplazo por GLB real
-window.loadCar = url => new GLTFLoader().load(url, g => {
-  car.clear(); g.scene.scale.setScalar(1); car.add(g.scene);
-});
+const TARGET_LENGTH = 4.2;
 
-/* ---------- Anclas 3D de los hotspots ---------- */
+const edge = new THREE.LineBasicMaterial({ color: 0x22e3ff, transparent: true, opacity: .95 });
+const fill = new THREE.MeshStandardMaterial({ color: 0x0d141d, metalness: .88, roughness: .25, transparent: true, opacity: .88 });
+const glassMat = new THREE.MeshStandardMaterial({ color: 0x16324a, metalness: .95, roughness: .1, transparent: true, opacity: .65 });
+const brakeMat = new THREE.MeshBasicMaterial({ color: 0xff8a1f, wireframe: true });
+const lightFront = new THREE.MeshBasicMaterial({ color: 0x22e3ff });
+const lightRear = new THREE.MeshBasicMaterial({ color: 0xff3b30 });
+
+/* ---------- Silueta procedural enriquecida con discos y escape (Punto 3) ---------- */
+function makeProcedural(tipo) {
+  const g = new THREE.Group();
+  const part = (geo, x, y, z, mat = fill, rot = [0, 0, 0]) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.rotation.set(...rot);
+    m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edge));
+    g.add(m);
+  };
+  const wheels = (wb, tr, r) => {
+    const tire = new THREE.CylinderGeometry(r, r, 0.32, 24);
+    const rim = new THREE.CylinderGeometry(r * 0.62, r * 0.62, 0.34, 12);
+    const disc = new THREE.CylinderGeometry(r * 0.45, r * 0.45, 0.12, 16);
+    [[wb, -0.22, tr], [wb, -0.22, -tr], [-wb, -0.22, tr], [-wb, -0.22, -tr]].forEach(([x, y, z]) => {
+      part(tire, x, y, z, fill, [Math.PI / 2, 0, 0]);
+      part(rim, x, y, z, glassMat, [Math.PI / 2, 0, 0]);
+      const d = new THREE.Mesh(disc, brakeMat);
+      d.position.set(x, y, z);
+      d.rotation.x = Math.PI / 2;
+      g.add(d);
+    });
+  };
+
+  if (tipo === 'hatchback') {
+    part(new THREE.BoxGeometry(3.85, 0.58, 1.82), 0, 0.05, 0);
+    part(new THREE.BoxGeometry(1.15, 0.25, 1.72), 1.32, 0.36, 0, fill, [0, 0, -0.12]);
+    part(new THREE.BoxGeometry(1.95, 0.58, 1.56), -0.35, 0.62, 0, glassMat);
+    part(new THREE.BoxGeometry(0.65, 0.56, 1.54), -1.35, 0.55, 0, glassMat, [0, 0, 0.35]);
+    part(new THREE.BoxGeometry(0.28, 0.08, 1.48), -1.38, 0.92, 0);
+    part(new THREE.BoxGeometry(0.65, 0.32, 0.85), 1.25, 0.18, 0, glassMat); // Bloque motor interno visible
+    part(new THREE.CylinderGeometry(0.07, 0.07, 0.45, 12), -1.85, -0.18, 0.48, glassMat, [0, 0, Math.PI / 2]); // Escape
+    part(new THREE.BoxGeometry(0.18, 0.14, 0.42), 1.88, 0.24, 0.62, lightFront);
+    part(new THREE.BoxGeometry(0.18, 0.14, 0.42), 1.88, 0.24, -0.62, lightFront);
+    part(new THREE.BoxGeometry(0.12, 0.18, 0.38), -1.88, 0.32, 0.64, lightRear);
+    part(new THREE.BoxGeometry(0.12, 0.18, 0.38), -1.88, 0.32, -0.64, lightRear);
+    wheels(1.28, 0.92, 0.41);
+  } else if (tipo === 'pickup') {
+    part(new THREE.BoxGeometry(4.9, 0.68, 1.96), 0, 0.18, 0);
+    part(new THREE.BoxGeometry(1.35, 0.35, 1.88), 1.7, 0.55, 0);
+    part(new THREE.BoxGeometry(1.85, 0.68, 1.76), 0.15, 0.85, 0, glassMat);
+    part(new THREE.BoxGeometry(1.65, 0.45, 1.9), -1.6, 0.62, 0);
+    part(new THREE.BoxGeometry(0.15, 0.18, 0.45), 2.42, 0.48, 0.68, lightFront);
+    part(new THREE.BoxGeometry(0.15, 0.18, 0.45), 2.42, 0.48, -0.68, lightFront);
+    wheels(1.62, 1.0, 0.5);
+  } else if (tipo === 'suv') {
+    part(new THREE.BoxGeometry(4.3, 0.68, 1.92), 0, 0.15, 0);
+    part(new THREE.BoxGeometry(2.85, 0.72, 1.72), -0.45, 0.82, 0, glassMat);
+    part(new THREE.BoxGeometry(1.15, 0.28, 1.82), 1.55, 0.52, 0);
+    wheels(1.42, 0.96, 0.46);
+  } else {
+    part(new THREE.BoxGeometry(4.5, 0.62, 1.86), 0, 0.08, 0);
+    part(new THREE.BoxGeometry(2.05, 0.6, 1.6), -0.15, 0.68, 0, glassMat);
+    part(new THREE.BoxGeometry(1.25, 0.22, 1.76), 1.55, 0.45, 0);
+    part(new THREE.BoxGeometry(0.95, 0.24, 1.74), -1.65, 0.46, 0);
+    part(new THREE.BoxGeometry(0.15, 0.14, 0.42), 2.22, 0.26, 0.64, lightFront);
+    part(new THREE.BoxGeometry(0.15, 0.14, 0.42), 2.22, 0.26, -0.64, lightFront);
+    wheels(1.45, 0.94, 0.43);
+  }
+  return g;
+}
+
+/* ---------- Normalización: largo fijo, centrado y apoyado sobre la grilla ---------- */
+function fitToStage(obj, rotY = 0) {
+  obj.rotation.y = rotY;
+  const holder = new THREE.Group();
+  holder.add(obj);
+  let box = new THREE.Box3().setFromObject(holder);
+  const size = box.getSize(new THREE.Vector3());
+  holder.scale.setScalar(TARGET_LENGTH / Math.max(size.x, size.z, 0.001));
+  box = new THREE.Box3().setFromObject(holder);
+  const c = box.getCenter(new THREE.Vector3());
+  holder.position.set(-c.x, -0.5 - box.min.y, -c.z);
+  return holder;
+}
+
+/* ---------- Carga de GLB con caché ---------- */
+const gltfLoader = new GLTFLoader();
+const gltfCache = new Map();
+function loadGLB(url) {
+  if (!gltfCache.has(url)) {
+    gltfCache.set(url, gltfLoader.loadAsync(url).catch(err => { gltfCache.delete(url); throw err; }));
+  }
+  return gltfCache.get(url).then(gltf => gltf.scene.clone(true));
+}
+
+/* ---------- Anclas de hotspots optimizadas (Punto 3: 8 subsistemas) ---------- */
 const ANCLAS = {
-  motor:    new THREE.Vector3( 1.6, .7,  0),
-  rueda_di: new THREE.Vector3( 1.4, -.2,  1.2),
-  rueda_dd: new THREE.Vector3( 1.4, -.2, -1.2),
-  rueda_ti: new THREE.Vector3(-1.4, -.2,  1.2),
-  rueda_td: new THREE.Vector3(-1.4, -.2, -1.2)
+  motor:       new THREE.Vector3( 1.45,  0.52,  0.00),
+  frenos:      new THREE.Vector3( 1.28, -0.18,  0.96),
+  suspension:  new THREE.Vector3( 1.25,  0.12, -0.88),
+  electrico:   new THREE.Vector3( 0.35,  0.68,  0.00),
+  bateria:     new THREE.Vector3( 1.55,  0.42, -0.55),
+  transmision: new THREE.Vector3( 0.85, -0.15,  0.25),
+  escape:      new THREE.Vector3(-1.85, -0.15,  0.48),
+  rueda_di:    new THREE.Vector3( 1.28, -0.20,  0.95),
+  rueda_dd:    new THREE.Vector3( 1.28, -0.20, -0.95),
+  rueda_ti:    new THREE.Vector3(-1.28, -0.20,  0.95),
+  rueda_td:    new THREE.Vector3(-1.28, -0.20, -0.95)
 };
+
+// Ángulo de giro ideal para que cada zona quede frente a la cámara al seleccionarla
+const ANGULOS_FOCO = {
+  motor:       0.15,
+  frenos:     -0.35,
+  suspension:  2.45,
+  electrico:   0.00,
+  bateria:     1.85,
+  transmision:-0.25,
+  escape:     -2.55
+};
+
 let spots = [];
-const glow = new THREE.PointLight(0xff8a1f, 0, 6); car.add(glow);
+
+let reqId = 0;
+async function setCarModel(tipo, glbUrl, rotY = 0) {
+  const id = ++reqId;
+  let root = null;
+  if (glbUrl) {
+    try { root = fitToStage(await loadGLB(glbUrl), rotY); }
+    catch (e) { console.warn('Modelo 3D no disponible, se usa silueta:', e); }
+  }
+  if (id !== reqId) return;
+  car.clear();
+  car.add(root || fitToStage(makeProcedural(tipo || 'sedan')));
+}
 
 window.TALLER = {
-  setHotspots(zonas) {
+  setCarModel,
+  setScroll(p) {
+    scrollTarget = p * Math.PI * 1.6;
+    controls.autoRotate = false;
+  },
+  focusZona(id) {
+    const pos = ANCLAS[id];
+    if (!pos) return;
+    controls.autoRotate = false;
+    if (ANGULOS_FOCO[id] !== undefined) {
+      scrollTarget = ANGULOS_FOCO[id];
+    }
+    glow.position.copy(pos);
+    glow.intensity = 28;
+    spots.forEach(s => s.el.classList.toggle('open', s.id === id));
+  },
+  setHotspots(zonas, onSelectCallback) {
     layer.innerHTML = ''; spots = []; glow.intensity = 0;
     zonas.forEach(z => {
       const pos = ANCLAS[z.id];
-      if (!pos) return;                                    // ignora zonas que el frontend no conoce
+      if (!pos) return;
       const nota = z.nota || z.id;
       const el = document.createElement('button');
       el.type = 'button';
       el.className = `hotspot ${z.estado === 'ok' ? 'ok' : 'work'}`;
       el.setAttribute('aria-label', nota);
       const tip = document.createElement('span');
-      tip.className = 'tip'; tip.textContent = nota;      // textContent: nunca HTML del servidor
+      tip.className = 'tip'; tip.textContent = nota;
       el.appendChild(tip);
-      el.addEventListener('click', () => { layer.querySelectorAll('.open').forEach(o => o !== el && o.classList.remove('open')); el.classList.toggle('open'); });
+      el.addEventListener('click', () => {
+        layer.querySelectorAll('.open').forEach(o => o !== el && o.classList.remove('open'));
+        el.classList.toggle('open');
+        window.TALLER.focusZona(z.id);
+        if (typeof onSelectCallback === 'function') onSelectCallback(z);
+      });
       layer.appendChild(el);
-      spots.push({ el, pos });
+      spots.push({ id: z.id, el, pos });
       if (z.id === 'motor' && z.estado === 'work') { glow.position.copy(ANCLAS.motor); glow.intensity = 25; }
     });
   }
 };
 
+setCarModel('sedan');
+
 /* ---------- Loop ---------- */
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
 }
 new ResizeObserver(resize).observe(stage); resize();
@@ -407,20 +807,21 @@ new ResizeObserver(resize).observe(stage); resize();
 const v = new THREE.Vector3(), c0 = new THREE.Vector3();
 (function loop(t) {
   requestAnimationFrame(loop);
-  if (!stage.clientWidth) return;          // sección oculta: no gastar GPU
+  if (!stage.clientWidth) return;
   controls.update();
+  car.rotation.y += (scrollTarget - car.rotation.y) * 0.12;
   glow.intensity && (glow.intensity = 18 + Math.sin(t / 260) * 8);
+  car.updateMatrixWorld(true);
   const w = stage.clientWidth, h = stage.clientHeight;
   c0.set(0, 0, 0).project(camera);
   spots.forEach(({ el, pos }) => {
     v.copy(pos).applyMatrix4(car.matrixWorld).project(camera);
-    el.style.transform = `translate(${(v.x * .5 + .5) * w}px, ${(-v.y * .5 + .5) * h}px)`;
-    const behind = v.z > c0.z + 0.02;                    // oculta hotspots del lado opuesto
+    el.style.transform = `translate(${(v.x * 0.5 + 0.5) * w}px, ${(-v.y * 0.5 + 0.5) * h}px)`;
+    const behind = v.z > c0.z + 0.02;
     el.style.opacity = behind ? 0 : 1; el.style.pointerEvents = behind ? 'none' : 'auto';
   });
   renderer.render(scene, camera);
 })(0);
-
 </script>
 </body>
 </html>
